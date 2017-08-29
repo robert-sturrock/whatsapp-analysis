@@ -1,0 +1,81 @@
+---
+title: "R Whatsapp Analysis"
+output: html_notebook
+---
+
+This code sets out how to upload and then analyse Whatsapp text data using both charts and networks.
+
+```{r}
+
+library("RCurl")
+library("data.table")
+
+#tab = read.delim(getURL("https://raw.githubusercontent.com/robert-sturrock/whatsapp-analysis/master/chat.txt"))
+#write.table(tab, file="text.csv",sep=",",col.names=FALSE,row.names=FALSE)
+
+
+tab = read.delim("C:/Users/rober/Desktop/chat.txt")
+write.table(tab, file="C:/Users/rober/Desktop/text.csv",sep=",",col.names=FALSE,row.names=FALSE)
+
+chat <- fread("C:/Users/rober/Desktop/text.csv", blank.lines.skip = TRUE)
+names(chat) <- "string"
+
+```
+
+Now we need to look at the data and format it approperiately 
+
+```{r}
+head(chat)
+
+```
+
+So we can see we have a date, time, sender, and message. 
+
+The first obvious issue here is that one of the senders names has been messed up. We can fix this using the regex commands in R 
+
+```{r}
+
+chat$string <- gsub("â???ª.*:", "Debbie Blair:", chat$string )
+head(chat$string)
+
+
+
+
+```
+
+Now that we have made that correction we need to split the string of text into the individual components identified above: 
+
+```{r}
+library(tidyverse)
+
+regx <- "(\\d+/\\d+/\\d+),\\s+(\\d+:\\d+:\\d+ [A|P]M):\\s+(\\w+\\s+\\w+):\\s+(.*)"
+
+tmp <- chat %>% 
+    extract(string, c("date", "time", "sender", "message"), regx, remove=FALSE)
+
+
+
+
+```
+
+We now have our desired variables. Lets build some basic functionality like search
+
+```{r}
+
+#regular expression search
+grep("sex", tmp$message, value=TRUE)
+
+
+#function that returns other columns of the data as well
+text_search <- function(text, df){
+  tmp <- df
+  tmp_index <- grep(text, tmp$message)
+  tmp[c(tmp_index),c("sender", "message")]
+}
+
+text_search("sex", tmp)
+
+
+```
+
+
