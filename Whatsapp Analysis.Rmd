@@ -35,7 +35,7 @@ The first obvious issue here is that one of the senders names has been messed up
 
 ```{r}
 
-chat$string <- gsub("â???ª.*:", "Debbie Blair:", chat$string )
+chat$string <- gsub("â.ª.*:", "Debbie Blair:", chat$string )
 head(chat$string)
 
 
@@ -75,7 +75,79 @@ text_search <- function(text, df){
 
 text_search("sex", tmp)
 
+#function to search around a specific instance (message before and after)
+
+
+conv_search <- function(text, df){ 
+  tmp <- df
+  tmp_index <- grep(text, tmp$message)
+  
+  #return lines
+  index <- tmp_index
+  
+  function(instance, num_lines){
+    if (num_lines %% 2 !=0){"error, needs even number"} else {
+    
+    instance <- index[instance]
+    start <- instance - num_lines/2
+    end   <- instance + num_lines/2  
+    tmp[start:end, c("sender", "message")]
+    } 
+  }
+  
+  
+}
+
+sex_search <- conv_search("sex", tmp)
+sex_search(2,6)
+
+library(wordcloud)
+
 
 ```
 
+
+
+Great. So we built some functions that make it easy to search text. 
+
+But searching isn't really the best way to get data about what people talked about. Charts on the other hand are awesome. 
+
+I start by building a simple frequency chart of how often a given work was said
+
+
+```{r}
+
+# Create a single block of text with all the words
+
+test <- unlist(tmp$message)
+test <- paste(test, sep="",collapse ="")
+
+# load required packages
+
+library(tm)
+library(dplyr)
+library(xtable)
+
+docs <- Corpus(VectorSource(test)) %>%
+  tm_map(removePunctuation) %>%
+  tm_map(removeNumbers) %>%
+  tm_map(tolower)  %>%
+  tm_map(removeWords, stopwords("english")) %>%
+  tm_map(stripWhitespace) %>%
+  tm_map(PlainTextDocument)
+
+tdm <- TermDocumentMatrix(docs) %>%
+  as.matrix()
+
+tdm <- as.matrix(tdm[,1])
+tdm <- as.matrix(tdm[order(tdm, decreasing = TRUE),])
+tdm <- as.matrix(tdm[10:17546,])
+tdm <- tdm[order(tdm, decreasing = TRUE),]
+
+
+
+wordcloud(names(tdm), tdm, min.freq = 35, scale=c(5, .2), random.order = FALSE, random.color = FALSE, colors= c("indianred1","indianred2","indianred3","indianred"))
+
+
+```
 
