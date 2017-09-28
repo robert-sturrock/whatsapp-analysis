@@ -9,6 +9,7 @@ This code sets out how to upload and then analyse Whatsapp text data using both 
 
 library("RCurl")
 library("data.table")
+library(stringr)
 
 #tab = read.delim(getURL("https://raw.githubusercontent.com/robert-sturrock/whatsapp-analysis/master/chat.txt"))
 #write.table(tab, file="text.csv",sep=",",col.names=FALSE,row.names=FALSE)
@@ -35,7 +36,7 @@ The first obvious issue here is that one of the senders names has been messed up
 
 ```{r}
 
-chat$string <- gsub("â.ª.*:", "Debbie Blair:", chat$string )
+chat$string <- gsub("â.ª.*: ", "Debbie Blair: ", chat$string )
 head(chat$string)
 
 
@@ -48,13 +49,14 @@ Now that we have made that correction we need to split the string of text into t
 ```{r}
 library(tidyverse)
 
-regx <- "(\\d+/\\d+/\\d+),\\s+(\\d+:\\d+:\\d+ [A|P]M):\\s+(\\w+\\s+\\w+):\\s+(.*)"
+regx <- "(\\d+/\\d+/\\d+),\\s+(\\d+:\\d+:\\d+ [A|P]M):\\s+(\\w+\\s*\\w+):\\s+(.*)"
 
 tmp <- chat %>% 
     extract(string, c("date", "time", "sender", "message"), regx, remove=FALSE)
 
 
-
+#eliminate NA rows (for now)
+tmp <- tmp[complete.cases(tmp)]
 
 ```
 
@@ -119,8 +121,9 @@ I start by building a simple frequency chart of how often a given work was said
 
 # Create a single block of text with all the words
 
+test <- unlist(tmp$message[tmp$sender == "Liam Kirwin"])
 test <- unlist(tmp$message)
-test <- paste(test, sep="",collapse ="")
+test <- paste(test, sep="",collapse =" ")
 
 # load required packages
 
@@ -141,13 +144,284 @@ tdm <- TermDocumentMatrix(docs) %>%
 
 tdm <- as.matrix(tdm[,1])
 tdm <- as.matrix(tdm[order(tdm, decreasing = TRUE),])
-tdm <- as.matrix(tdm[10:17546,])
-tdm <- tdm[order(tdm, decreasing = TRUE),]
+#tdm <- as.matrix(tdm[10:17546,])
+#tdm <- tdm[order(tdm, decreasing = TRUE),]
 
 
 
-wordcloud(names(tdm), tdm, min.freq = 35, scale=c(5, .2), random.order = FALSE, random.color = FALSE, colors= c("indianred1","indianred2","indianred3","indianred"))
+wordcloud(row.names(tdm), tdm, min.freq = 35, scale=c(5, .2), random.order = FALSE, random.color = FALSE, colors= c("indianred1","indianred2","indianred3","indianred"))
+
+
+
+
+#Now we create a wordcloud function 
+
+WA_wordcloud <- function(sender, df, min.freq){
+  
+  #required packages
+  #require(tm)
+  #require(dplyr)
+  #require(xtable)
+  #require(wordcloud)
+  #require(stringr)
+  
+  #set function
+  tmp <- unlist(df$message[df$sender == sender])
+  tmp <- paste(tmp, sep="",collapse ="")
+  
+  #eliminate all non alpha numberic
+  tmp <- str_replace_all(tmp, "[^a-zA-Z0-9]"," ")
+
+  
+  #create term document matrix and format it
+  tmp_docs <- Corpus(VectorSource(tmp)) %>%
+  tm_map(removePunctuation) %>%
+  tm_map(removeNumbers) %>%
+  tm_map(tolower)  %>%
+  tm_map(removeWords, stopwords("english")) %>%
+  tm_map(removeWords,"image") %>%
+  tm_map(stripWhitespace) %>%
+  tm_map(PlainTextDocument)
+  
+  tmp_tdm <- TermDocumentMatrix(tmp_docs) %>%
+  as.matrix()
+  
+  tmp_tdm <- as.matrix(tmp_tdm[,1])
+  tmp_tdm <- as.matrix(tmp_tdm[order(tmp_tdm, decreasing = TRUE),])
+  
+  #create wordcloud
+  layout(matrix(c(1,2), nrow = 2), heights = c(1,2))
+  par(mar = rep(0,4))
+  plot.new()
+  text(x=0.5, y=0.5, sender)
+  
+  
+  wordcloud(row.names(tmp_tdm), tmp_tdm, 
+            min.freq = min.freq, 
+            scale=c(2, .1), 
+            random.order = FALSE, 
+            random.color = FALSE,  
+            colors= c("indianred1","indianred2","indianred3","indianred"))
+
+
+  
+}
+
+
+WA_wordcloud(sender = "Liam Kirwin", df = tmp, min.freq = 15)
+
+flat_names <- list("Liam Kirwin", "Isabel Lachenauer", "Robert", "Debbie Blair", "Elizabeth Stone")
+
+lapply(flat_names, function(x) WA_wordcloud(x, df = tmp, min.freq = 25))
+
+```
+
+
+Another potentially interesting idea is to do a wordcloud of words that people use more than the average. This would involve calculating two data.frames/matricies with words and frequencies. And then subtracting the individual words from the average. 
+
+```{r}
+
+#create a function that creates a tdm 
+
+tdm_creator <- function(sender="all", df){
+  
+  #set function
+  if(sender != "all"){tmp <- unlist(df$message[df$sender == sender])} else {tmp <- unlist(df$message)}
+  tmp <- paste(tmp, sep="",collapse ="")
+  
+  #eliminate all non alpha numberic
+  tmp <- str_replace_all(tmp, "[^a-zA-Z0-9]"," ")
+
+  
+  #create term document matrix and format it
+  tmp_docs <- Corpus(VectorSource(tmp)) %>%
+  tm_map(removePunctuation) %>%
+  tm_map(removeNumbers) %>%
+  tm_map(tolower)  %>%
+  tm_map(removeWords, stopwords("english")) %>%
+  tm_map(removeWords,"image") %>%
+  tm_map(stripWhitespace) %>%
+  tm_map(PlainTextDocument)
+  
+  tmp_tdm <- TermDocumentMatrix(tmp_docs) %>%
+  as.matrix()
+  
+  tmp_tdm <- as.matrix(tmp_tdm[,1])
+  as.matrix(tmp_tdm[order(tmp_tdm, decreasing = TRUE),])
+}
+
+
+
+word_df <- function(matr){
+  data.frame(word = row.names(matr), freq = matr)
+}
+
+#create data.frames to compare
+isabel <- tdm_creator(sender = "Isabel Lachenauer", df = tmp)
+liam <- tdm_creator(sender = "Liam Kirwin", df = tmp)
+all <- tdm_creator(df = tmp)
+
+isabel <- word_df(isabel)
+liam <- word_df(liam)
+all <- word_df(all)
+
+t <- left_join(liam, all, by = "word")
+t <- left_join(isabel, all, by = "word")
+
+#identify words that liam says relatively more than others
+
+t$diff <- t$freq.x - t$freq.y/5
+
+
+t %>% arrange(desc(diff)) %>% head()
+
+#control also for frequency that the word appears in the general group chat 
+
+t <- t[t$freq.x <= t$freq.y,]
+t$diff2 <- (t$freq.x - t$freq.y/5)/t$freq.y
+
+
+t %>% arrange(desc(diff2)) %>% head()
+
+#create a word cloud of most unique words
+
+t2 <- t %>% filter(diff>0)
+
+wordcloud(t2$word, t2$diff,
+            scale=c(3, .1), 
+            random.order = FALSE, 
+            random.color = FALSE,  
+            colors= c("indianred1","indianred2","indianred3","indianred"))
+
+# use alternative method, but only use words that appear at least 3 times
+t3 <- t %>% filter(diff2>0 & freq.x >3)
+
+
+wordcloud(t3$word, t3$diff2,
+            scale=c(3, .1), 
+            max.word = 100,
+            random.order = FALSE, 
+            random.color = FALSE,  
+            colors= c("indianred1","indianred2","indianred3","indianred"))
+
+```
+
+
+
+```{r}
+
+# Function that creates a unique word cloud by person 
+
+unique_wordcloud <- function(df, sender, type){
+  
+  #total senders
+  tot_senders <- length(unique(df$sender))
+  
+  #create tdm
+  person <- word_df(tdm_creator(sender = sender, df = tmp))
+  all <- word_df(tdm_creator(df = tmp))
+  
+  t <- left_join(person, all, by = "word")
+
+  #identify words that liam says relatively more than others
+  
+  t$diff <- t$freq.x - t$freq.y/tot_senders
+  
+  #control also for frequency that the word appears in the general group chat 
+  
+  t <- t[t$freq.x <= t$freq.y,]
+  t$diff2 <- (t$freq.x - t$freq.y/tot_senders)/t$freq.y
+  
+  #create a word cloud of most unique words
+  
+  t2 <- t %>% filter(diff>0)
+  t3 <- t %>% filter(diff2>0 & freq.x >3)
+
+  
+  
+  if (type == 1){
+  wordcloud(t2$word, t2$diff,
+              scale=c(3, .1), 
+              random.order = FALSE, 
+              random.color = FALSE,  
+              colors= c("indianred1","indianred2","indianred3","indianred"))} 
+  
+  else if (type ==2){
+  wordcloud(t3$word, t3$diff2,
+            scale=c(3, .1), 
+            random.order = FALSE, 
+            random.color = FALSE,  
+            colors= c("indianred1","indianred2","indianred3","indianred"))
+  } else {stop('invalid type selected')}
+  
+    
+  
+}
+
+unique_wordcloud(df = tmp, sender = "Elizabeth Stone", type = 2)
+unique_wordcloud(df = tmp, sender = "Robert", type = 2)
+
+
+
+
+
+
+flat_names <- list("Liam Kirwin", "Isabel Lachenauer", "Robert", "Debbie Blair", "Elizabeth Stone")
+
+lapply(flat_names, function(x) unique_wordcloud(sender = x, df = tmp, type = 2))
 
 
 ```
+
+# Words said over time
+
+So now I need to replicate some of the work I did earlier, namely plotting the frequency of words over time
+
+
+```{r}
+
+
+#step 1:
+
+#count the number of times a word appears by date
+tmp %>% group_by(date) %>% summarise(number = gre)
+
+
+
+
+
+
+```
+
+#who talks to who the most
+
+
+```{r}
+
+
+def responses(self):
+		
+		## Create Empty Response Matrix
+		labels = self.df['Name'].unique()
+		responses = pd.DataFrame(0,index=labels,columns=labels)
+		
+		## Update values in Response Matrix
+		# self.df.sort(columns='Time', inplace = 1)
+		x, y = 1, 2
+		while y < len(self.df):
+			n1 = self.df.ix[x]['Name']
+			n2 = self.df.ix[y]['Name']
+			if n1 != n2: #only responses to others are valid
+				responses.loc[n1,n2]=responses.loc[n1,n2]+1
+			y = y + 1
+			x = x + 1
+		return responses
+		
+# Structure
+		
+#1. For each individual keep only them and the response
+
+tmp %>% filter(sender == "Liam Kirwin")  %>% head()
+
+?lead
 
