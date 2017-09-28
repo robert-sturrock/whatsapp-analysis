@@ -395,33 +395,304 @@ tmp %>% group_by(date) %>% summarise(number = gre)
 
 #who talks to who the most
 
+#who talks to who the most
+
 
 ```{r}
 
 
-def responses(self):
-		
-		## Create Empty Response Matrix
-		labels = self.df['Name'].unique()
-		responses = pd.DataFrame(0,index=labels,columns=labels)
-		
-		## Update values in Response Matrix
-		# self.df.sort(columns='Time', inplace = 1)
-		x, y = 1, 2
-		while y < len(self.df):
-			n1 = self.df.ix[x]['Name']
-			n2 = self.df.ix[y]['Name']
-			if n1 != n2: #only responses to others are valid
-				responses.loc[n1,n2]=responses.loc[n1,n2]+1
-			y = y + 1
-			x = x + 1
-		return responses
-		
-# Structure
-		
-#1. For each individual keep only them and the response
 
-tmp %>% filter(sender == "Liam Kirwin")  %>% head()
+#write a function that looks at most frequent reponders
 
-?lead
 
+response_summary <- function(df, sender, type){
+
+library(scales)
+
+#select sender 
+  tmp <- df tmp$indicator <- 0 
+  tmp[tmp$sender == sender,]$indicator <- 1 
+  tmp$indicator <- lag(tmp$indicator)
+
+  #calculate total messages by sender tmp <- tmp %>% group_by(sender) %>%
+  mutate(total_messages = n()) tmp
+  
+  if (type == 1){ tmp %>% group_by(sender) %>% filter(indicator == 1) %>% 
+  summarise(total_responses = n())
+  
+  } else if (type == 2){ tmp %>% group_by(sender) %>% filter(indicator == 1) %>% 
+  mutate(total_responses_to_sender = n()) %>% mutate(done =
+  total_responses_to_sender/total_messages) %>% summarise("% of all messages made
+  in response to sender" = percent(mean(done)))} }
+
+
+response_summary(tmp, "Liam Kirwin", type = 1)
+
+
+# Create a response matrix
+
+
+response_matrix <- function(df, type){
+
+senders <- response_summary(tmp, flat_names[[1]], type = type)$sender
+
+
+responses_total <- cbind(as.data.frame(lapply(senders, function(x)
+response_summary(df, x, type = type)[[2]]))) names(responses_total) <- senders 
+row.names(responses_total) <- senders responses_total
+
+
+}
+
+response_matrix(tmp, 1)
+
+#check how equally people respond to each other
+
+mat1 <- as.matrix(response_matrix(tmp, 1)) # how often x responded to y 
+mat2 <- t(mat1) # how often y responded to x
+
+#so what this means is that mat1[1,2] - mat2[1,2] is how often Lizzie replied to
+Debbie - how often Debbie replied to Lizzie
+
+mat1 
+mat2
+
+# the results show that people in our conversation are quite equal. Which is what we'd expect in conversations where two people are most important/no one person is avoiding the other.
+
+(mat1 - mat2)
+
+
+# total messages people sent
+
+lapply(response_matrix(tmp,1), sum)
+
+# do this by word count 
+```
+
+
+
+
+
+# Duplicate the functions above, but apply it to individual words
+
+
+```{r}
+
+
+
+#write a function that looks at most frequent reponders
+
+
+response_summary_word <- function(df, sender, type, word){
+
+library(scales)
+
+#select sender 
+  tmp <- df 
+  tmp$indicator <- 0 
+  tmp[tmp$sender == sender & grepl(word, tmp$message),]$indicator <- 1 
+  tmp$indicator <- lag(tmp$indicator)
+
+#calculate total messages by sender 
+  tmp <- tmp %>% group_by(sender) %>%
+    mutate(total_messages = n()) 
+  tmp
+
+if (type == 1){ tmp %>% group_by(sender) %>% filter(indicator == 1) %>% 
+summarise(total_responses = n())
+
+} else if (type == 2){ tmp %>% group_by(sender) %>% filter(indicator == 1) %>% 
+mutate(total_responses_to_sender = n()) %>% mutate(done =
+total_responses_to_sender/total_messages) %>% summarise("% of all messages made
+in response to sender" = percent(mean(done)))} }
+
+
+response_summary_word(tmp, "Isabel Lachenauer", type = 1, word="sad")
+
+
+# Create a response matrix
+
+
+response_matrix_word <- function(df, type, word){
+
+senders <- response_summary(tmp, flat_names[[1]], type = type)$sender
+
+
+responses_total <- cbind(as.data.frame(lapply(senders, function(x)
+response_summary_word(df, x, type = type, word = word)[[2]]))) 
+names(responses_total) <- senders row.names(responses_total) <- senders 
+responses_total
+
+
+}
+
+response_matrix_word(tmp, 1, word = "sex")
+
+#check how equally people respond to each other
+
+mat1 <- as.matrix(response_matrix_word(tmp, 1, "like")) # how often x responded to y 
+mat2 <- t(mat1) # how often y responded to x
+
+
+(mat1 - mat2)
+
+
+# total messages people sent
+
+lapply(response_matrix(tmp,1), sum)
+
+# do this by word count 
+```
+
+
+
+
+
+
+
+
+
+
+# Next: write some of the functions using SE
+
+```{r}
+
+
+#select groups usinge SE
+
+freq_plot <- function(df, word, v1, v2){
+
+tmp <- df tmp %>% mutate(date = myd(date)) %>%
+  group_by_(v1, v2) %>%
+  filter(grepl(word, message)) %>%  
+  summarise(count = n()) %>%
+  ggplot(aes(x = date, y = count, color = sender)) + geom_point() + ylim(0,NA) + theme_bw() }
+
+
+freq_plot(tmp, "sex", v1 = "sender", v2 = "date")
+
+#summary table of two variable
+
+tw_tab <- function(df, v1, v2){
+
+tmp <- df
+
+tmp %>% group_by_(v1, v2) %>% 
+  mutate(tot=n()) %>% 
+  ungroup() %>% 
+  group_by_(v1) %>% 
+  mutate(perc = tot/n()) %>% 
+  ungroup() %>% group_by_(v1, v2) %>% 
+  summarise(end = mean(perc)) %>% dcast(paste(v1, '~', v2), value.var = "end")
+
+}
+
+# plot share of conversation over time 
+tw_tab(tmp, "date", "sender") %>%
+  mutate(date = mdy(date)) %>% 
+  melt(id.vars="date") %>% 
+  ggplot(aes(x = date, y = value, color = variable, fill = variable)) + geom_col()
+
+
+
+
+```
+
+
+
+
+
+
+
+
+# Next: turn the response matrix into a network diagram
+
+In order to do this I basically want to depict the relationships between people
+and how important people are to the conversation.
+
+Features include:
+
+* nodes that are sized based on number of messages a person sent * directional
+flows that are related to number of messages sent * do this for individual words
+
+
+```{r}
+
+library(visNetwork) library(igraph)
+
+
+# Create nodes data.frame
+
+library(dplyr) library(magrittr)
+
+# create names
+nodes <- data.frame(select(tmp, sender) %>% distinct()) 
+names(nodes) <- "id"
+
+# create number of messages sent 
+totals <- select(tmp, sender) %>%
+  group_by(sender) %>% 
+  summarise(sum = n()) 
+
+nodes$size <- (totals$sum *100)/sum(totals$sum)
+
+# Create edges of data.frame 
+
+responses <- response_matrix(tmp, 1) 
+
+responses <-nas.data.frame(responses)
+responses$name <- row.names(responses) 
+responses_m <- melt(responses) 
+names(responses_m) <- c("from","to", "number")
+
+# format as network
+
+edges <- responses_m 
+edges$to <- as.character(edges$to) 
+edges$width <- (edges$number * 100)/sum(totals$sum)
+edges$title <- paste("<p style=\"color:black\">",edges$number,"</p>")
+
+# add in node colors, names nodes$group <- nodes$id nodes$label <- nodes$id 
+nodes$title <- paste("<p style=\"color: black\">",totals$sum,"</p>")
+
+# plot library(visNetwork) visNetwork(nodes, edges, width = "100%") %>%
+visPhysics( solver ='forceAtlas2Based')
+
+
+
+
+```
+
+
+
+# New additions:
+
+* do analysis of messages by number of words * do network and table for an
+individual word * topic analysis * build app that allows you to upload file to
+analyse (produces network and word clouds)
+
+
+# Count number of words
+
+```{r}
+
+# Create variable that is number of words per message
+
+test <- "this message has many words in it"
+length(unlist(strsplit(test, split = " ")))
+
+test2 <- data.frame(c = c("message with three", "message with two"), stringsAsFactors = FALSE)
+str(test2)
+length(unlist(strsplit(test2$c, split = " ")))
+
+
+library(stringr)
+
+# create variable with number of words in each line
+
+tmp %<>% ungroup
+tmp %>% mutate(number_words = str_count(message, " ")) %>% group_by(sender) %>% summarise(total_words = sum(number_words), avg_message_length = total_words/mean(total_messages))
+
+
+
+```
