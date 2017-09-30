@@ -79,6 +79,8 @@ text_search("sex", tmp)
 
 #function to search around a specific instance (message before and after)
 
+# this function generates another function that allows the user to select which instance of a word, and the 
+# number of lines around that word, they want to see. 
 
 conv_search <- function(text, df){ 
   tmp <- df
@@ -219,6 +221,8 @@ lapply(flat_names, function(x) WA_wordcloud(x, df = tmp, min.freq = 25))
 
 Another potentially interesting idea is to do a wordcloud of words that people use more than the average. This would involve calculating two data.frames/matricies with words and frequencies. And then subtracting the individual words from the average. 
 
+
+Step 1: 
 ```{r}
 
 #create a function that creates a tdm 
@@ -384,7 +388,7 @@ So now I need to replicate some of the work I did earlier, namely plotting the f
 #step 1:
 
 #count the number of times a word appears by date
-tmp %>% group_by(date) %>% summarise(number = gre)
+tmp %>% group_by(date) %>% summarise(number = n())
 
 
 
@@ -393,7 +397,6 @@ tmp %>% group_by(date) %>% summarise(number = gre)
 
 ```
 
-#who talks to who the most
 
 #who talks to who the most
 
@@ -405,28 +408,34 @@ tmp %>% group_by(date) %>% summarise(number = gre)
 #write a function that looks at most frequent reponders
 
 
-response_summary <- function(df, sender, type){
+response_summary <- function(df, person, type){
 
 library(scales)
 
 #select sender 
-  tmp <- df tmp$indicator <- 0 
-  tmp[tmp$sender == sender,]$indicator <- 1 
-  tmp$indicator <- lag(tmp$indicator)
+  tmp <- df 
+  tmp$indicator <- 0 
+  tmp[tmp$sender == person]$indicator <- 1 
+  tmp$ind <- lag(tmp$indicator)
 
-  #calculate total messages by sender tmp <- tmp %>% group_by(sender) %>%
-  mutate(total_messages = n()) tmp
+  #calculate total messages by sender 
+  tmp <- tmp %>% group_by(sender) %>%
+  mutate(total_messages = n()) 
+  tmp
   
-  if (type == 1){ tmp %>% group_by(sender) %>% filter(indicator == 1) %>% 
-  summarise(total_responses = n())
+  #create statistics
+  if (type == 1){ tmp %>% group_by(sender) %>% 
+      filter(ind == 1) %>% 
+      summarise(total_responses = n())
   
-  } else if (type == 2){ tmp %>% group_by(sender) %>% filter(indicator == 1) %>% 
-  mutate(total_responses_to_sender = n()) %>% mutate(done =
-  total_responses_to_sender/total_messages) %>% summarise("% of all messages made
-  in response to sender" = percent(mean(done)))} }
+  } else if (type == 2){ tmp %>% group_by(sender) %>% 
+      filter(indicator == 1) %>% 
+      mutate(total_responses_to_sender = n()) %>% 
+      mutate(done = total_responses_to_sender/total_messages) %>% 
+      summarise("% of all messages made in response to sender" = percent(mean(done)))} }
 
 
-response_summary(tmp, "Liam Kirwin", type = 1)
+response_summary(tmp, "Liam Kirwin", type = 2)
 
 
 # Create a response matrix
@@ -667,9 +676,10 @@ visPhysics( solver ='forceAtlas2Based')
 
 # New additions:
 
-* do analysis of messages by number of words * do network and table for an
-individual word * topic analysis * build app that allows you to upload file to
-analyse (produces network and word clouds)
+* do analysis of messages by number of words 
+* do network and table for an individual word 
+* topic analysis 
+* build app that allows you to upload file to analyse (produces network and word clouds)
 
 
 # Count number of words
