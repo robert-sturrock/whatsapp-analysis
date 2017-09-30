@@ -447,8 +447,10 @@ senders <- response_summary(tmp, flat_names[[1]], type = type)$sender
 
 
 responses_total <- cbind(as.data.frame(lapply(senders, function(x)
-response_summary(df, x, type = type)[[2]]))) names(responses_total) <- senders 
-row.names(responses_total) <- senders responses_total
+response_summary(df, x, type = type)[[2]]))) 
+names(responses_total) <- senders 
+row.names(responses_total) <- senders 
+responses_total
 
 
 }
@@ -460,8 +462,7 @@ response_matrix(tmp, 1)
 mat1 <- as.matrix(response_matrix(tmp, 1)) # how often x responded to y 
 mat2 <- t(mat1) # how often y responded to x
 
-#so what this means is that mat1[1,2] - mat2[1,2] is how often Lizzie replied to
-Debbie - how often Debbie replied to Lizzie
+#so what this means is that mat1[1,2] - mat2[1,2] is how often Lizzie replied to  Debbie - how often Debbie replied to Lizzie
 
 mat1 
 mat2
@@ -492,20 +493,20 @@ lapply(response_matrix(tmp,1), sum)
 #write a function that looks at most frequent reponders
 
 
-response_summary_word <- function(df, sender, type, word){
+response_summary_word <- function(df, person, type, word){
 
 library(scales)
 
 #select sender 
   tmp <- df 
   tmp$indicator <- 0 
-  tmp[tmp$sender == sender & grepl(word, tmp$message),]$indicator <- 1 
+  tmp[tmp$sender == person & grepl(word, tmp$message),]$indicator <- 1 
   tmp$indicator <- lag(tmp$indicator)
 
 #calculate total messages by sender 
   tmp <- tmp %>% group_by(sender) %>%
     mutate(total_messages = n()) 
-  tmp
+  
 
 if (type == 1){ tmp %>% group_by(sender) %>% filter(indicator == 1) %>% 
 summarise(total_responses = n())
@@ -516,7 +517,12 @@ total_responses_to_sender/total_messages) %>% summarise("% of all messages made
 in response to sender" = percent(mean(done)))} }
 
 
-response_summary_word(tmp, "Isabel Lachenauer", type = 1, word="sad")
+
+response_summary_word(tmp, "Isabel Lachenauer", type = 2, word="lol")
+
+
+
+
 
 
 # Create a response matrix
@@ -537,6 +543,35 @@ responses_total
 
 response_matrix_word(tmp, 1, word = "sex")
 
+
+
+
+# Note: the response matrix only works if the matrix is full 
+# to solve this we might be able 
+
+
+
+
+
+
+```
+
+
+
+
+
+Note that this response matrix function only works if the entire response matrix is full (ie everyone said every word to each person).
+
+
+We want to fix this so that the function works regardless of the 
+
+
+
+
+
+```{r}
+
+
 #check how equally people respond to each other
 
 mat1 <- as.matrix(response_matrix_word(tmp, 1, "like")) # how often x responded to y 
@@ -552,11 +587,6 @@ lapply(response_matrix(tmp,1), sum)
 
 # do this by word count 
 ```
-
-
-
-
-
 
 
 
