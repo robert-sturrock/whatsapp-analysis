@@ -496,29 +496,29 @@ lapply(response_matrix(tmp,1), sum)
 response_summary_word <- function(df, person, type, word){
 
 library(scales)
-
+library(magrittr)
 #select sender 
   tmp <- df 
   tmp$indicator <- 0 
   tmp[tmp$sender == person & grepl(word, tmp$message),]$indicator <- 1 
   tmp$indicator <- lag(tmp$indicator)
+  tmp %<>% mutate(indicator = ifelse(is.na(indicator), 0, indicator))
 
 #calculate total messages by sender 
   tmp <- tmp %>% group_by(sender) %>%
     mutate(total_messages = n()) 
   
 
-if (type == 1){ tmp %>% group_by(sender) %>% filter(indicator == 1) %>% 
-summarise(total_responses = n())
+if (type == 1){ tmp %>% group_by(sender) %>% summarise(total_responses = sum(na.omit(indicator)))
 
-} else if (type == 2){ tmp %>% group_by(sender) %>% filter(indicator == 1) %>% 
-mutate(total_responses_to_sender = n()) %>% mutate(done =
-total_responses_to_sender/total_messages) %>% summarise("% of all messages made
-in response to sender" = percent(mean(done)))} }
-
+} else if (type == 2){tmp %>% group_by(sender) %>%
+    mutate(total_responses_to_sender = sum(na.omit(indicator))) %>%
+    mutate(done = total_responses_to_sender/total_messages) %>% 
+    summarise("% of all messages made in response to sender" = percent(mean(done)))} }
 
 
-response_summary_word(tmp, "Isabel Lachenauer", type = 2, word="lol")
+
+response_summary_word(tmp, "Isabel Lachenauer", type = 2, word="sex")
 
 
 
@@ -563,7 +563,52 @@ response_matrix_word(tmp, 1, word = "sex")
 Note that this response matrix function only works if the entire response matrix is full (ie everyone said every word to each person).
 
 
-We want to fix this so that the function works regardless of the 
+We want to fix this so that the function works regardless of the completeness of the matrix. 
+
+```{r}
+
+
+
+# try and just accomplish it once
+response_summary_word(tmp, "Liam Kirwin", 1, "sex")
+
+# create the matrix of 
+
+#select sender 
+  test <- tmp 
+  test$indicator <- 0 
+  test[test$sender == "Liam Kirwin" & grepl("sex", test$message),]$indicator <- 1 
+  test$indicator <- lag(test$indicator)
+
+#calculate total messages by sender 
+
+test %>% group_by(sender) %>% summarise(total_responses = sum(na.omit(indicator)))
+  
+test3 <- test %>% group_by(sender) %>% summarise(other_var = 0) %>% left_join(test2) %>% mutate( total_responses = ifelse(is.na(total_responses), other_var, total_responses))
+
+
+
+
+
+response_matrix_word <- function(df, type, word){
+
+senders <- response_summary(tmp, flat_names[[1]], type = type)$sender
+
+
+responses_total <- cbind(as.data.frame(lapply(senders, function(x)
+response_summary_word(df, x, type = type, word = word)[[2]]))) 
+names(responses_total) <- senders row.names(responses_total) <- senders 
+responses_total
+
+
+}
+
+response_matrix_word(tmp, 1, word = "sex")
+
+
+
+```
+
 
 
 
