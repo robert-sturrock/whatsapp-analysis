@@ -493,7 +493,6 @@ lapply(response_matrix(tmp,1), sum)
 
 
 response_summary_word <- function(df, person, type, word){
-browser()
 library(scales)
 library(magrittr)
 #select sender 
@@ -765,8 +764,7 @@ names(nodes) <- "id"
 
 
 # create number of messages sent 
-totals <- select(tmp, sender, message) %>%
-  grep()
+totals <- select(tmp, sender, message) %>% 
   group_by(sender) %>% 
   summarise(sum = n()) 
 
@@ -776,8 +774,8 @@ nodes$size <- (totals$sum *100)/sum(totals$sum)
 responses <- response_matrix_word(tmp, 1, word = "sex") 
 
 responses <-as.data.frame(responses)
-responses$name <- row.names(responses) 
-responses_m <- melt(responses) 
+responses_t <- t(responses) #so that melt correctly picks up to and from
+responses_m <- melt(responses_t) 
 names(responses_m) <- c("from","to", "number")
 
 # format as network
@@ -816,6 +814,19 @@ Later stages of the app should then add some additional summary measures (person
 
 ```{r}
 
+## Setup
+
+# create names
+nodes <- data.frame(select(tmp, sender) %>% distinct()) 
+names(nodes) <- "id"
+
+# add in node colors, names 
+nodes$group <- nodes$id 
+nodes$label <- nodes$id 
+nodes$title <- paste("<p style=\"color: black\">",totals$sum,"</p>")
+
+
+
 
 require(shiny)
 require(visNetwork)
@@ -823,11 +834,44 @@ require(visNetwork)
 server <- function(input, output) {
   output$network <- renderVisNetwork({
  
-    visNetwork(nodes, edges)
+    # create number of messages sent for node size
+    word <- "sex"
+    
+    totals <- select(tmp, sender, message) %>%
+      mutate(ind = ifelse(grepl(input$word, tmp$message), 1, 0)) %>% 
+      group_by(sender) %>% 
+      summarise(sum = sum(ind)) 
+    
+    nodes$size <- pmax((totals$sum *100)/sum(totals$sum), 75/sum(totals$sum))
+    
+    # create response matrix
+    responses <- response_matrix_word(tmp, 1, word = input$word) 
+    responses <-as.data.frame(responses)
+    responses_t <- t(responses) #so that melt correctly picks up to and from
+    responses_m <- melt(responses_t) 
+    names(responses_m) <- c("from","to", "number")
+    
+    # format as network edges
+    edges <- responses_m 
+    edges$to <- as.character(edges$to) 
+    edges$width <- (edges$number * 50)/sum(edges$number)
+    edges$title <- paste("<p style=\"color:black\">",edges$number,"</p>")
+    edges <- edges[edges$number > 0,]
+
+    
+
+    # render network 
+    visNetwork(nodes, edges) %>%
+      visPhysics( solver ='forceAtlas2Based')
   })
 }
 
 ui <- fluidPage(
+  
+    # create user input word box 
+    textInput("word", "Word", value = "hi"),
+
+    # render output
     visNetworkOutput("network")
 )
 
