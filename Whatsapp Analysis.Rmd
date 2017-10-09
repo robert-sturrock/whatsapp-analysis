@@ -411,11 +411,10 @@ tmp %>% group_by(date) %>% summarise(number = n())
 response_summary <- function(df, person, type){
 
 library(scales)
-
 #select sender 
   tmp <- df 
   tmp$indicator <- 0 
-  tmp[tmp$sender == person]$indicator <- 1 
+  tmp[tmp$sender == person,]$indicator <- 1 
   tmp$ind <- lag(tmp$indicator)
 
   #calculate total messages by sender 
@@ -429,7 +428,7 @@ library(scales)
       summarise(total_responses = n())
   
   } else if (type == 2){ tmp %>% group_by(sender) %>% 
-      filter(indicator == 1) %>% 
+      filter(ind == 1) %>% 
       mutate(total_responses_to_sender = n()) %>% 
       mutate(done = total_responses_to_sender/total_messages) %>% 
       summarise("% of all messages made in response to sender" = percent(mean(done)))} }
@@ -494,13 +493,17 @@ lapply(response_matrix(tmp,1), sum)
 
 
 response_summary_word <- function(df, person, type, word){
-
+browser()
 library(scales)
 library(magrittr)
 #select sender 
   tmp <- df 
   tmp$indicator <- 0 
-  tmp[tmp$sender == person & grepl(word, tmp$message),]$indicator <- 1 
+  if (length(tmp[tmp$sender == person & grepl(word, tmp$message),]$indicator) > 0){
+    tmp[tmp$sender == person & grepl(word, tmp$message),]$indicator <- 1 
+  } else { 
+    tmp$indicator <- 0
+  }
   tmp$indicator <- lag(tmp$indicator)
   tmp %<>% mutate(indicator = ifelse(is.na(indicator), 0, indicator))
 
@@ -518,7 +521,7 @@ if (type == 1){ tmp %>% group_by(sender) %>% summarise(total_responses = sum(na.
 
 
 
-response_summary_word(tmp, "Isabel Lachenauer", type = 2, word="sex")
+response_summary_word(tmp, "Robert", type = 1, word="sex")
 
 
 
@@ -529,27 +532,24 @@ response_summary_word(tmp, "Isabel Lachenauer", type = 2, word="sex")
 
 
 response_matrix_word <- function(df, type, word){
-
-senders <- response_summary(tmp, flat_names[[1]], type = type)$sender
+senders <- response_summary(tmp, flat_names[[1]], type = 1)$sender
 
 
 responses_total <- cbind(as.data.frame(lapply(senders, function(x)
-response_summary_word(df, x, type = type, word = word)[[2]]))) 
-names(responses_total) <- senders row.names(responses_total) <- senders 
+response_summary_word(df, x, type = type, word = word)[,2]))) 
+names(responses_total) <- senders 
+row.names(responses_total) <- senders 
 responses_total
 
 
 }
 
-response_matrix_word(tmp, 1, word = "sex")
+response_matrix_word(tmp, 1, word = "lol")
 
 
+lapply(senders, function(x){response_summary_word(tmp,x,type=1,word="sex")})
 
-
-# Note: the response matrix only works if the matrix is full 
-# to solve this we might be able 
-
-
+response_summary_word(tmp, "Robert", type = 1, word="sex")
 
 
 
@@ -652,16 +652,19 @@ flows that are related to number of messages sent * do this for individual words
 
 ```{r}
 
-library(visNetwork) library(igraph)
+library(visNetwork) 
+library(igraph)
 
 
 # Create nodes data.frame
 
-library(dplyr) library(magrittr)
+library(dplyr) 
+library(magrittr)
 
 # create names
 nodes <- data.frame(select(tmp, sender) %>% distinct()) 
 names(nodes) <- "id"
+
 
 # create number of messages sent 
 totals <- select(tmp, sender) %>%
@@ -669,12 +672,11 @@ totals <- select(tmp, sender) %>%
   summarise(sum = n()) 
 
 nodes$size <- (totals$sum *100)/sum(totals$sum)
-
 # Create edges of data.frame 
 
 responses <- response_matrix(tmp, 1) 
 
-responses <-nas.data.frame(responses)
+responses <-as.data.frame(responses)
 responses$name <- row.names(responses) 
 responses_m <- melt(responses) 
 names(responses_m) <- c("from","to", "number")
@@ -686,10 +688,13 @@ edges$to <- as.character(edges$to)
 edges$width <- (edges$number * 100)/sum(totals$sum)
 edges$title <- paste("<p style=\"color:black\">",edges$number,"</p>")
 
-# add in node colors, names nodes$group <- nodes$id nodes$label <- nodes$id 
+# add in node colors, names 
+nodes$group <- nodes$id 
+nodes$label <- nodes$id 
 nodes$title <- paste("<p style=\"color: black\">",totals$sum,"</p>")
 
-# plot library(visNetwork) visNetwork(nodes, edges, width = "100%") %>%
+# plot library(visNetwork) 
+visNetwork(nodes, edges, width = "100%") %>%
 visPhysics( solver ='forceAtlas2Based')
 
 
@@ -699,10 +704,17 @@ visPhysics( solver ='forceAtlas2Based')
 
 
 
+
+
+
+
+
+
+
 # New additions:
 
-* do analysis of messages by number of words 
-* do network and table for an individual word 
+* do analysis of messages by number of words (done)
+* do network and table for an individual word (table done)
 * topic analysis 
 * build app that allows you to upload file to analyse (produces network and word clouds)
 
@@ -731,3 +743,101 @@ tmp %>% mutate(number_words = str_count(message, " ")) %>% group_by(sender) %>% 
 
 
 ```
+
+
+# Word sepecific matrix
+
+
+```{r}
+
+library(visNetwork) 
+library(igraph)
+
+
+# Create nodes data.frame
+
+library(dplyr) 
+library(magrittr)
+
+# create names
+nodes <- data.frame(select(tmp, sender) %>% distinct()) 
+names(nodes) <- "id"
+
+
+# create number of messages sent 
+totals <- select(tmp, sender, message) %>%
+  grep()
+  group_by(sender) %>% 
+  summarise(sum = n()) 
+
+nodes$size <- (totals$sum *100)/sum(totals$sum)
+# Create edges of data.frame 
+
+responses <- response_matrix_word(tmp, 1, word = "sex") 
+
+responses <-as.data.frame(responses)
+responses$name <- row.names(responses) 
+responses_m <- melt(responses) 
+names(responses_m) <- c("from","to", "number")
+
+# format as network
+
+edges <- responses_m 
+edges$to <- as.character(edges$to) 
+edges$width <- (edges$number * 50)/sum(edges$number)
+edges$title <- paste("<p style=\"color:black\">",edges$number,"</p>")
+edges <- edges[edges$number > 0,]
+
+# add in node colors, names 
+nodes$group <- nodes$id 
+nodes$label <- nodes$id 
+nodes$title <- paste("<p style=\"color: black\">",totals$sum,"</p>")
+
+# plot library(visNetwork) 
+visNetwork(nodes, edges, width = "100%") %>%
+visPhysics( solver ='forceAtlas2Based')
+
+
+
+
+```
+
+
+
+
+# Create shiny app 
+
+The first stage of creating this shiny app is just making it so that the user can select (via an input box) what word the would like to look at the network of. 
+
+Ideally I would then also make it so the can just look at the matrix of all messages sent (or perhaps have this as a seperate part of the app for comparison purposes).
+
+Later stages of the app should then add some additional summary measures (person specific word cloud, messages sent over time, messages sent over time containing a particular word, etc). 
+
+
+```{r}
+
+
+require(shiny)
+require(visNetwork)
+
+server <- function(input, output) {
+  output$network <- renderVisNetwork({
+ 
+    visNetwork(nodes, edges)
+  })
+}
+
+ui <- fluidPage(
+    visNetworkOutput("network")
+)
+
+shinyApp(ui = ui, server = server)
+
+
+
+```
+
+
+
+
+
