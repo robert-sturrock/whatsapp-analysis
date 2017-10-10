@@ -531,7 +531,7 @@ response_summary_word(tmp, "Robert", type = 1, word="sex")
 
 
 response_matrix_word <- function(df, type, word){
-senders <- response_summary(tmp, flat_names[[1]], type = 1)$sender
+senders <- response_summary(df, df$sender[[1]], type = 1)$sender
 
 
 responses_total <- cbind(as.data.frame(lapply(senders, function(x)
@@ -547,9 +547,6 @@ response_matrix_word(tmp, 1, word = "lol")
 
 
 lapply(senders, function(x){response_summary_word(tmp,x,type=1,word="sex")})
-
-response_summary_word(tmp, "Robert", type = 1, word="sex")
-
 
 
 
