@@ -1,0 +1,12 @@
+name: whatsapp_analytics_tool
+title: WhatsApp Analytics Tool
+username:
+account: robertms
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 225100
+bundleId: 1035317
+url: https://robertms.shinyapps.io/whatsapp_analytics_tool/
+when: 1508437581.0096
+asMultiple: FALSE
+asStatic: FALSE
