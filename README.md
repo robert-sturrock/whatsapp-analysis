@@ -1,2 +1,3 @@
 # whatsapp-analysis
-Project to analyse Whatsapp conversations
+Project to analyse Whatsapp conversations.
+
