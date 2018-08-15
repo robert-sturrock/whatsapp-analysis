@@ -1,0 +1,13 @@
+name: whatsapp-analysis
+title: whatsapp-analysis
+username:
+account: robertms
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 225099
+bundleId: 1026289
+url: https://robertms.shinyapps.io/whatsapp-analysis/
+when: 1507953147.26763
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: Whatsapp Analysis Shiny App.Rmd|Whatsapp Analysis.nb.html|Whatsapp Analysis.Rmd

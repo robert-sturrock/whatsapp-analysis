@@ -1,0 +1,799 @@
+---
+title: "Whatsapp Analytics Tool"
+author: "Robert Sturrock"
+date: "October 11, 2017"
+output: html_document
+---
+
+# Load packages
+
+
+```{r}
+
+library("RCurl")
+library("data.table")
+library(stringr)
+library(tidyr)
+library(lubridate)
+library(shiny)
+library(shinythemes)
+library(reshape2)
+library(dplyr)
+library(visNetwork)
+library(ggplot2)
+library(DT)
+library(shinyjs)
+
+
+
+# improve shiny plot quality
+library(Cairo)
+options(shiny.usecairo=T)
+
+
+```
+
+
+# Load data (for trialling app functions)
+
+```{r}
+
+chat <- read.table("C:/Users/rober/Desktop/chat.txt",  fill=TRUE, quote="", sep="\n", encoding="UTF-8")
+names(chat) <- "string"
+
+regx <- "(\\d+/\\d+/\\d+),\\s+(\\d+:\\d+:\\d+ [A|P]M):\\s+(\\w+\\s*\\w+):\\s+(.*)"
+
+
+tmp <- chat %>% 
+    tidyr::extract(string, c("date", "time", "sender", "message"), regx, remove=FALSE)
+
+
+#eliminate NA rows (for now)
+tmp <- filter(tmp, !is.na(sender))
+
+
+#clean out weird characters
+tmp$message <- str_replace_all(tmp$message, "[^a-zA-Z0-9.?!-<> ]", "")
+
+
+```
+
+
+
+
+# Response summary (whole chat)
+
+```{r}
+
+
+
+#write a function that looks at most frequent reponders
+
+
+response_summary <- function(df, person, type){
+library(scales)
+#select sender 
+  tmp <- df 
+  tmp$indicator <- 0 
+  tmp[tmp$sender == person,]$indicator <- 1 
+  tmp$ind <- lag(tmp$indicator)
+
+  #calculate total messages by sender 
+  tmp <- tmp %>% group_by(sender) %>%
+  mutate(total_messages = n()) 
+  tmp
+  
+  #create statistics
+  if (type == 1){ tmp %>% group_by(sender) %>% 
+      filter(ind == 1) %>% 
+      summarise(total_responses = n())
+  
+  } else if (type == 2){ tmp %>% group_by(sender) %>% 
+      filter(ind == 1) %>% 
+      mutate(total_responses_to_sender = n()) %>% 
+      mutate(done = total_responses_to_sender/total_messages) %>% 
+      summarise("% of all messages made in response to sender" = percent(mean(done)))} }
+
+
+response_summary(tmp, "Liam Kirwin", type = 1)
+
+
+# Create a response matrix
+
+
+response_matrix <- function(df, type){
+  
+  senders <- response_summary(df, df$sender[[1]], type = 1)$sender
+  
+  responses_total <- cbind(as.data.frame(lapply(senders, function(x)
+  response_summary(df, x, type = type)[[2]]))) 
+  names(responses_total) <- senders 
+  row.names(responses_total) <- senders 
+  responses_total
+
+
+}
+
+response_matrix(tmp, 1)
+
+```
+
+
+
+# Response summary (word)
+
+
+```{r}
+
+
+
+#write a function that looks at most frequent reponders
+
+
+response_summary_word <- function(df, person, type, word){
+library(scales)
+library(magrittr)
+#select sender 
+  tmp <- df 
+  tmp$indicator <- 0 
+  if (length(tmp[tmp$sender == person & grepl(word, tmp$message),]$indicator) > 0){
+    tmp[tmp$sender == person & grepl(word, tmp$message),]$indicator <- 1 
+  } else { 
+    tmp$indicator <- 0
+  }
+  tmp$indicator <- lag(tmp$indicator)
+  tmp %<>% mutate(indicator = ifelse(is.na(indicator), 0, indicator))
+
+#calculate total messages by sender 
+  tmp <- tmp %>% group_by(sender) %>%
+    mutate(total_messages = n()) 
+  
+
+if (type == 1){ tmp %>% group_by(sender) %>% summarise(total_responses = sum(na.omit(indicator)))
+
+} else if (type == 2){tmp %>% group_by(sender) %>%
+    mutate(total_responses_to_sender = sum(na.omit(indicator))) %>%
+    mutate(done = total_responses_to_sender/total_messages) %>% 
+    summarise("% of all messages made in response to sender" = percent(mean(done)))} }
+
+
+
+response_summary_word(tmp, "Robert", type = 1, word="sex")
+
+
+
+
+
+
+# Create a response matrix
+
+
+response_matrix_word <- function(df, type, word){
+  senders <- response_summary(df, df$sender[[1]], type = 1)$sender
+  
+  
+  responses_total <- cbind(as.data.frame(lapply(senders, function(x)
+  response_summary_word(df, x, type = type, word = word)[,2]))) 
+  names(responses_total) <- senders 
+  row.names(responses_total) <- senders 
+  responses_total
+  
+
+}
+
+response_matrix_word(tmp, 1, word = "lol")
+
+
+
+```
+
+
+# Create Network Whatsapp function
+
+```{r}
+
+
+create_network_whatsapp <- function(file, word){
+    
+  # load chat  
+    loaded_chat <- read.table(file,  
+                                fill=TRUE, header=TRUE, quote="", sep="\n", encoding="UTF-8")
+    names(loaded_chat) <- "string"
+     
+    # format the data and split into different columns
+    regx <- "(\\d+/\\d+/\\d+),\\s+(\\d+:\\d+:\\d+ [A|P]M):\\s+(\\w+\\s*\\w+):\\s+(.*)"
+    tmp <- loaded_chat %>%
+         tidyr::extract(string, c("date", "time", "sender", "message"), regx, remove=FALSE)
+     
+     tmp <- filter(tmp, !is.na(sender))
+     
+    # create nodes list
+    nodes <- data.frame(select(tmp, sender) %>% distinct()) 
+    names(nodes) <- "id"
+
+    # add in node colors, names 
+    nodes$group <- nodes$id 
+    nodes$label <- nodes$id
+
+    #create number of messages sent for node size
+    totals <- select(tmp, sender, message) %>%
+      mutate(ind = ifelse(grepl(word, message), 1, 0)) %>%
+      group_by(sender) %>%
+      summarise(total_messages = sum(ind))
+
+  
+    nodes <- left_join(nodes, totals, by=c("id"="sender"))
+    nodes$size <- pmin(pmax((nodes$total_messages *100)/sum(nodes$total_messages), 75/sum(nodes$total_messages)),50)
+    nodes$title <- paste("<p style=\"color: black\">",nodes$total_messages,"</p>")
+    
+
+    # create response matrix
+    responses <- response_matrix_word(tmp, 1, word = word)
+    responses <-as.data.frame(responses)
+    responses_t <- t(responses) #so that melt correctly picks up to and from
+    responses_m <- melt(responses_t)
+    names(responses_m) <- c("from","to", "number")
+    
+    
+    # format as network edges
+    edges <- responses_m 
+    edges$to <- as.character(edges$to) 
+    edges$width <- pmin((edges$number * 50)/sum(edges$number), 50)
+    edges$title <- paste("<p style=\"color:black\">",edges$number,"</p>")
+    edges <- edges[edges$number > 0,]
+
+    # render network 
+    visNetwork(nodes, edges) %>%
+      visPhysics( solver ='forceAtlas2Based') %>% visNodes(font = list(color = "white"))
+  
+  
+  
+  
+}
+
+create_network_whatsapp(file = "C:/Users/rober/Desktop/chat.txt", word = "hi")
+
+
+
+
+
+```
+
+
+# Clean data function: 
+
+```{r}
+
+clean_convo <- function(file){
+    
+  # load chat  
+    loaded_chat <- read.table(file,  
+                                fill=TRUE, header=TRUE, quote="", sep="\n", encoding="UTF-8")
+    names(loaded_chat) <- "string"
+     
+    # format the data and split into different columns
+    regx <- "(\\d+/\\d+/\\d+),\\s+(\\d+:\\d+:\\d+ [A|P]M):\\s+(\\w+\\s*\\w+):\\s+(.*)"
+    tmp <- loaded_chat %>%
+         tidyr::extract(string, c("date", "time", "sender", "message"), regx, remove=FALSE)
+     
+     tmp <- filter(tmp, !is.na(sender))
+     tmp$message <- str_replace_all(tmp$message, "[^a-zA-Z0-9.?!-<> ]", "")
+
+     tmp
+}
+
+test <- clean_convo("C:/Users/rober/Desktop/chat.txt")
+
+```
+
+
+
+# Word frequency functions 
+
+
+```{r}
+
+library(lubridate)
+library(zoo)
+library(ggthemes)
+
+# Frequency plot function
+
+freq_plot <- function(df, word, v1, v2){
+
+ df %>% mutate(date = mdy(date)) %>%
+  group_by_(v1, v2) %>%
+  filter(grepl(word, message)) %>%  
+  summarise(count = n()) %>%
+  ggplot(aes(x = date, y = count, color = sender)) + geom_line() + ylim(0,NA) + theme_bw() }
+
+
+freq_plot(tmp, ".", v1 = "sender", v2 = "date")  + theme_hc(bgcolor = "darkunica") +
+  scale_colour_hc("darkunica")
+
+# Smoothed frequency plot function 
+
+smoothed_frequency_plot <- function(df, word, smooth = TRUE, point = TRUE, smooth_days){
+
+    tmp_data <- df %>% mutate(date = mdy(date)) %>%
+    group_by(sender, date) %>%
+    mutate(ind = ifelse(grepl(word, message), 1, 0)) %>% 
+    summarise(count = sum(ind)) %>% 
+      group_by(sender) %>% 
+      mutate(smooth_count = rollmean(count, smooth_days, fill = NA))
+  
+  if (smooth == TRUE & point == TRUE){
+        ggplot(tmp_data) + geom_point(aes(x = date, y = count, color = sender), size = 0.25) +
+        geom_line(aes(x=date, y = smooth_count, color = sender), size = 0.25) + 
+        ylim(0,NA) + theme_bw() + guides(colour = guide_legend(title = "Sender", override.aes = list(size=1))) +
+        xlab("Date") + ylab("# of messages")
+    
+    } else if (smooth == TRUE & point == FALSE){
+        ggplot(tmp_data) + 
+        geom_line(aes(x=date, y = smooth_count, color = sender), size = 0.25) + 
+        ylim(0,NA) + theme_bw() + guides(colour = guide_legend(title = "Sender", override.aes = list(size=1))) +
+        xlab("Date") + ylab("# of messages")
+      
+    } else { 
+        ggplot(tmp_data) + geom_point(aes(x = date, y = count, color = sender), size = 0.25) +
+        ylim(0,NA) + theme_bw() + guides(colour = guide_legend(title = "Sender", override.aes = list(size=1))) +
+        xlab("Date") + ylab("# of messages")
+    }
+
+}
+
+smoothed_frequency_plot(tmp, "lol", smooth = TRUE, smooth_days = 25)
+
+
+# Share of conversation
+
+
+#summary table of two variable
+
+tw_tab <- function(df, v1, v2){
+
+tmp <- df
+
+tmp %>% group_by_(v1, v2) %>% 
+  mutate(tot=n()) %>% 
+  ungroup() %>% 
+  group_by_(v1) %>% 
+  mutate(perc = tot/n()) %>% 
+  ungroup() %>% group_by_(v1, v2) %>% 
+  summarise(end = mean(perc)) %>% dcast(paste(v1, '~', v2), value.var = "end")
+
+}
+
+# plot share of conversation over time 
+tw_tab(tmp, "date", "sender") %>%
+  mutate(date = mdy(date)) %>% 
+  melt(id.vars="date") %>% 
+  ggplot(aes(x = date, y = value, color = variable, fill = variable)) + geom_col()
+
+
+
+# Smoothed share function 
+
+
+smoothed_share <- function(df, smooth_days){
+  
+  # set up 
+  tmp_data <- df
+  tmp_data <- tw_tab(tmp_data, "date", "sender") %>% mutate(date = mdy(date)) %>% arrange(date)
+  tmp_data[is.na(tmp_data)] <- 0
+  
+  # create smoothed share of conversation
+  tmp_data_smoothed <- data.frame(lapply(tmp_data[,2:dim(tmp_data)[2]], function(x){rollmean(x, smooth_days, fill = NA)}))
+  tmp_data_smoothed <- data.frame(Date = tmp_data[,1], tmp_data_smoothed)
+  
+  # produce plot
+  tmp_plot_data <- tmp_data_smoothed %>% melt(id.vars = "Date")
+  tmp_plot_data %>% ggplot(aes(x = Date, y = value * 100, color = variable, fill = variable)) + geom_col() +
+    ylab("Share (%)") + guides(fill = guide_legend(title = "Sender"), color = "none") + theme_bw()
+  
+  
+}
+
+smoothed_share(tmp, smooth_days = 10)
+
+```
+
+
+# Search function
+
+
+```{r}
+
+
+#function that returns other columns of the data as well
+text_search <- function(text, df){
+  tmp <- df
+  tmp_index <- grep(text, tmp$message)
+  tmp[c(tmp_index),c("sender", "message")]
+}
+
+text_search("sex", tmp)
+
+#function to search around a specific instance (message before and after)
+
+# this function generates another function that allows the user to select which instance of a word, and the 
+# number of lines around that word, they want to see. 
+
+conv_search <- function(df, line, context_lines){
+    if (context_lines %% 2 !=0){"error, needs even number"} else {
+    
+    start <- line - context_lines/2
+    end   <- line + context_lines/2  
+    
+    if (start >= 1 & end <= dim(df)[1]){
+    df[start:end, c("sender", "message")]
+    }
+    else if (start < 1 & end <= dim(df)[1]){
+    df[1:end, c("sender", "message")]
+    }
+    else if (start >= 1 & end > dim(df)[1]){
+    df[start:dim(df)[1], c("sender", "message")] 
+    }
+    else {
+    df[1:dim(df)[1], c("sender", "message")] 
+    } 
+  
+    }
+}
+
+conv_search(tmp, 1, 10)
+
+
+```
+
+
+
+
+
+# Use function to write cleaner shiny app 
+
+
+```{r}
+
+ui <- navbarPage("WhatsApp Analytics Tool", theme = shinytheme("darkly"), useShinyjs(),
+
+                 
+## Panel 1: Network
+tabPanel("Conversation network",
+         
+  titlePanel("Conversation network"),
+
+  # Output        
+  fluidRow(
+  
+      column(6,
+        # render first network
+        visNetworkOutput("network_1")
+        
+      ),
+      
+      column(6,
+        # render first network
+        visNetworkOutput("network_2")
+        
+      )
+    ),
+  
+  # Inputs
+  fluidRow(
+      column(4,
+        
+        # file input 1
+        fileInput("file_1", "Choose file 1",
+          accept = c(".txt")
+          ),
+     
+        # create user input word box 
+        textInput("word_1", "Word for first network", value = "hi")
+  
+      ), 
+      column(4, offset = 4, 
+             
+        # file input 2
+        fileInput("file_2", "Choose file 2",
+          accept = c(".txt")
+          ),
+        
+        # create user input word box 
+        textInput("word_2", "Word for second network", value = "hi")
+        )
+      )
+),
+
+## Panel 2: Word use statistics
+tabPanel("Word use statistics", 
+         
+  titlePanel("Word use statistics"),
+  
+  # Set up tab panel
+  tabsetPanel(position = "left",
+    
+    ## Plots
+    # Tab 1: word frequency
+    tabPanel(  "Word frequency",         
+           
+    fluidRow(
+    
+        column(5,
+               
+          # render first plot
+          plotOutput("word_freq_1"),
+          tags$head(tags$style(HTML("
+                              .shiny-plot-output{
+                              max-width: 100%;
+                              box-shadow: 0px 0px 3px #888;
+                              }
+                              ")))
+        ),
+        
+        column(5, offset = 2,
+               
+          # render second plot
+          plotOutput("word_freq_2")
+          
+        )
+      )
+    ), 
+    
+    # Tab 2: conversation share
+    tabPanel("Conversation share",
+                  
+    fluidRow(
+    
+        column(5,
+               
+          # render first plot
+          plotOutput("convo_share_1")
+          
+        ),
+        
+        column(5, offset = 2,
+               
+          # render second plot
+          plotOutput("convo_share_2")
+          
+        )
+      )    
+    )
+  ),
+  
+  ## Input sliders/text
+  fluidRow(
+    
+    column(5, offset = 0,  
+           
+           sliderInput("smoothing_parameter", "Number of days to smooth over", min = 1, max = 30, value = 10),
+           checkboxInput("smooth", "Word/message frequency trend", TRUE),
+           checkboxInput("point", "Word/message frequency points", TRUE),
+           textInput("word_freq", "Word (use \".\" for all words)", value = ".")
+           
+           ),
+    
+    column(5, offset = 2,
+        
+           sliderInput("smoothing_parameter_2", "Number of days to smooth over", min = 1, max = 30, value = 10),
+           checkboxInput("smooth_2", "Word/message frequency trend", TRUE),
+           checkboxInput("point_2", "Word/message frequency points", TRUE),
+           textInput("word_freq_2", "Word (use \".\" for all words)", value = ".")
+              
+           )
+    
+  )
+
+         
+),
+
+## Panel 3: Search
+ tabPanel("Search",
+          
+  titlePanel("Search"),
+
+  sidebarLayout(
+    
+    # Inputs 
+    sidebarPanel(style='padding:10px;',
+
+    textInput("word_search", "Word/phrase", value = "hi"),
+    p("Note that search is only for the", em("file 1"), "WhatsApp conversation"),
+    numericInput("line_number", "Line number", value = 10, min = 1, step = 1),
+    sliderInput("context_lines", "Number of context lines", min = 2, max = 50, value = 10, step = 2)
+
+    ),
+    
+    # Outputs
+    mainPanel(
+      tabsetPanel(
+        tabPanel("Search results", dataTableOutput("word_search")), 
+        tabPanel("Context", dataTableOutput("word_context"))
+      )
+    )
+  )
+
+         
+)
+
+
+
+)
+
+## Server
+
+server <- function(input, output) {
+
+    ## Create Network 1
+    output$network_1 <- renderVisNetwork({
+
+    # Load file, if exists
+    inFile_1 <- input$file_1
+    if (is.null(inFile_1))
+      return(NULL)
+    
+    create_network_whatsapp(inFile_1$datapath, input$word_1)
+
+  })
+  
+    ## Create Network 2
+    output$network_2 <- renderVisNetwork({
+    
+    # Load file, if exists
+    inFile_2 <- input$file_2
+    if (is.null(inFile_2))
+      return(NULL)
+    
+    create_network_whatsapp(inFile_2$datapath, input$word_2)
+
+  })  
+    
+    ## Create Word Freq Plot 1 
+    
+    output$word_freq_1 <- renderPlot({
+      
+      # only show plot if file exists
+      if(is.null(input$file_1)){
+        hide("word_freq_1")}
+      else{
+        show("word_freq_1")}
+    
+    inFile_1 <- input$file_1
+    
+    tmp_data <- clean_convo(inFile_1$datapath)
+    
+    smoothed_frequency_plot(tmp_data, word = input$word_freq, 
+                            smooth = input$smooth, point = input$point, 
+                            smooth_days = input$smoothing_parameter) + 
+      theme_hc(bgcolor = "darkunica") + 
+      scale_colour_hc("darkunica") +
+      ggtitle("Number of messages containing word by day") +
+      theme(text=element_text(size=8))
+ 
+    }, res=120)
+    
+    
+
+    ## Create Word Freq Plot 2
+    
+    output$word_freq_2 <- renderPlot({
+      
+      # only show plot if file exists
+      if(is.null(input$file_2)){
+        hide("word_freq_2")}
+      else{
+        show("word_freq_2")}
+ 
+        inFile_2 <- input$file_2
+          
+        tmp_data <- clean_convo(inFile_2$datapath)
+        
+        smoothed_frequency_plot(tmp_data, word = input$word_freq_2, 
+                                smooth = input$smooth_2, point = input$point_2, 
+                                smooth_days = input$smoothing_parameter_2) +   
+          theme_hc(bgcolor = "darkunica") + 
+          scale_colour_hc("darkunica") +
+          ggtitle("Number of messages containing word by day") +
+          theme(text=element_text(size=8))
+        
+      }, res=120)  
+
+    
+    
+    ## Create conversation share 1 
+    
+    output$convo_share_1 <- renderPlot({
+      
+      # only show plot if file exists
+      if(is.null(input$file_1)){
+        hide("convo_share_1")}
+      else{
+        show("convo_share_1")}
+      
+    inFile_1 <- input$file_1
+
+    tmp_data <- clean_convo(inFile_1$datapath) 
+    
+    smoothed_share(tmp_data, smooth_days = input$smoothing_parameter) +   
+      theme_hc(bgcolor = "darkunica") + 
+      scale_colour_hc("darkunica") +
+      scale_fill_hc("darkunica") +
+      ggtitle("Number of messages containing word by day") +
+      theme(text=element_text(size=8))
+      
+    }, res = 120)
+    
+    ## Create conversation share 2
+    
+    output$convo_share_2  <- renderPlot({
+      
+      # only show plot if file exists
+      if(is.null(input$file_2)){
+        hide("convo_share_2")}
+      else{
+        show("convo_share_2")}
+      
+      inFile_2 <- input$file_2
+          
+      tmp_data <- clean_convo(inFile_2$datapath)
+      
+      smoothed_share(tmp_data, smooth_days = input$smoothing_parameter_2) +   
+        theme_hc(bgcolor = "darkunica") + 
+        scale_colour_hc("darkunica") +
+        scale_fill_hc("darkunica") +
+        ggtitle("Number of messages containing word by day") +
+        theme(text=element_text(size=8))
+      
+      }, res = 120)
+    
+    
+    ## Create search function
+    
+    output$word_search <- renderDataTable({
+
+    # check file exists
+    inFile_1 <- input$file_1
+    if (is.null(inFile_1))
+      return(NULL)
+    
+    tmp_data <- clean_convo(inFile_1$datapath) 
+    
+    tmp_table <- text_search(input$word_search, df = tmp_data)
+
+    DT::datatable(tmp_table, style = 'bootstrap', 
+                  filter="top", selection="multiple", 
+                  escape=FALSE, options = list(sDom  = '<"top">lrt<"bottom">ip'))  
+    
+    
+    })
+    
+    ## Create context function
+    
+    output$word_context <- renderDataTable({
+      
+    # check file exists
+    inFile_1 <- input$file_1
+    if (is.null(inFile_1))
+      return(NULL)
+    
+    tmp_data <- clean_convo(inFile_1$datapath) 
+    
+    tmp_table <- conv_search(line = input$line_number, context_line = input$context_lines, df = tmp_data)
+
+    DT::datatable(tmp_table, style = 'bootstrap', 
+                  filter="top", selection="multiple", 
+                  escape=FALSE, options = list(sDom  = '<"top">lrt<"bottom">ip'))  
+    
+    
+    })
+  
+}
+
+shinyApp(ui, server)
+
+
+
+```
+
+
